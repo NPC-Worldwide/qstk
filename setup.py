@@ -10,7 +10,9 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        "npcpy>=1.1.7"
+        "npcpy>=1.3.33",
+        "numpy",
+        "pandas",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
