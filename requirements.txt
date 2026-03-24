@@ -1,1 +1,3 @@
 npcpy>=1.3.33
+numpy
+pandas

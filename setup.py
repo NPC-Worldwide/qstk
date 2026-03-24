@@ -14,6 +14,9 @@ setup(
         "numpy",
         "pandas",
     ],
+    extras_require={
+        "torch": ["torch>=2.0"],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

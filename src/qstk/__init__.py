@@ -28,3 +28,6 @@ from .results import (
 )
 from .grid import get_param_grid, build_sweep_configs, sweep_summary
 from .arrays import create_bell_array, create_bell_meshgrid
+
+# Complex-valued neural networks (pure numpy, no torch required)
+from . import cnn
