@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="qstk",
+    name="qstkl",
     version="0.1.0",
     description="Quantum Semantic Toolkit: Quantum semantic methods powered by npcpy.",
     author="Christopher Agostino",
