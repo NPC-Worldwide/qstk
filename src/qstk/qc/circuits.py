@@ -139,15 +139,16 @@ def chsh_circuit(
     ev = chsh_expectation_values(state, A0, A1, B0, B1)
     s = ev["A_B"] - ev["A_B_prime"] + ev["A_prime_B"] + ev["A_prime_B_prime"]
 
-    # Sample measurements for each setting
     rng = np.random.default_rng(seed)
     measurement_counts = {}
     for label, op in [("A_B", A0 @ B0), ("A_B_prime", A0 @ B1),
                        ("A_prime_B", A1 @ B0), ("A_prime_B_prime", A1 @ B1)]:
-        # Project state into eigenbasis of the operator and sample
         eigenvalues, eigenvectors = np.linalg.eigh(op)
         probs = np.abs(eigenvectors.conj().T @ state) ** 2
         probs = probs / probs.sum()
+        if n_shots == 0:
+            measurement_counts[label] = {"+1": 0, "-1": 0, "mean": 0.0}
+            continue
         samples = rng.choice(len(eigenvalues), size=n_shots, p=probs)
         outcomes = eigenvalues[samples]
         measurement_counts[label] = {

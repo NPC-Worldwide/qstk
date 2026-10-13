@@ -94,9 +94,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
-# Import helpers from the existing module
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from quantum_pam import (
+from qstk.cnn.quantum_pam import (
     normalize,
     build_outer_product_unitary,
     _unitary_first_col,

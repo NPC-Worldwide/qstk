@@ -11,6 +11,7 @@ Modules:
   - personas: Persona generation (requires npcpy)
   - arrays: NPCArray helpers (requires npcpy)
   - results: CSV aggregation (requires pandas)
+  - grid: Parameter grid utilities for Bell test experiments
 """
 
 # Core — always available, only numpy

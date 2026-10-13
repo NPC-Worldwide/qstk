@@ -21,9 +21,6 @@ import os
 import time
 import numpy as np
 
-# Ensure the package is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-
 from qstk.cnn.autograd import CharPAM as CharPAMAutograd
 from qstk.cnn.model import CharPAM
 

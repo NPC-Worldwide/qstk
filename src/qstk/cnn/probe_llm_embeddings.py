@@ -27,7 +27,6 @@ Usage:
     /home/caug/npcww/qstk/qllm2/.venv/bin/python probe_llm_embeddings.py
 """
 
-import sys
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -40,9 +39,7 @@ from matplotlib.gridspec import GridSpec
 from scipy.spatial.distance import cosine as cosine_dist
 from scipy.stats import spearmanr, pearsonr
 
-# Add parent so we can import probe
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from probe import (
+from qstk.cnn.probe import (
     embed_to_complex,
     phase_coherence,
     phase_clusters,
