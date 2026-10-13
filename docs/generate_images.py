@@ -315,7 +315,7 @@ def chsh_classical_vs_quantum():
     fig.suptitle("Classical vs Quantum Bell Tests (Synthetic)", fontsize=14, fontweight="bold")
 
     ax = axes[0]
-    ax.hist(classical_s, bins=30, alpha=0.6, color="#2196F3", label="Classical", density=True)
+    ax.hist(classical_s, bins=20 if len(set(round(s, 6) for s in classical_s)) > 1 else [min(classical_s) - 0.1, max(classical_s) + 0.1], alpha=0.6, color="#2196F3", label="Classical", density=True)
     ax.hist(quantum_s, bins=30, alpha=0.6, color="#f44336", label="Quantum (5% noise)", density=True)
     ax.hist(noisy_s, bins=30, alpha=0.6, color="#FF9800", label="Quantum (50% noise)", density=True)
     ax.axvline(x=2, color="k", linestyle="--", linewidth=2, label="|S|=2")
@@ -365,6 +365,266 @@ def chsh_classical_vs_quantum():
     print("  chsh_classical_vs_quantum.png")
 
 
+def _tokenize(text):
+    return text.lower().split()
+
+
+def _term_counts(text, vocab):
+    tokens = _tokenize(text)
+    return {term: tokens.count(term) for term in vocab}
+
+
+def _compute_idf(documents, vocab):
+    n = len(documents)
+    idf = {}
+    for term in vocab:
+        df = sum(1 for d in documents if term in _tokenize(d))
+        idf[term] = np.log((n + 1) / (df + 1)) + 1.0
+    return idf
+
+
+def _tfidf_vector(counts, idf, terms):
+    total = sum(counts.values())
+    vec = np.array([counts.get(term, 0) / total * idf.get(term, 0.0) for term in terms], dtype=float)
+    norm = np.linalg.norm(vec)
+    return vec / norm if norm > 0 else vec
+
+
+def _pad_to_power_of_two(vec):
+    dim = 2 ** int(np.ceil(np.log2(max(len(vec), 1))))
+    out = np.zeros(dim, dtype=complex)
+    out[:len(vec)] = vec
+    norm = np.linalg.norm(out)
+    if norm == 0:
+        out[0] = 1.0
+        return out
+    return out / norm
+
+
+def _select_top_terms_by_query(vocab, idf, query, k):
+    counts = _term_counts(query, vocab)
+    total = sum(counts.values())
+    weights = {term: counts.get(term, 0) / total * idf.get(term, 0.0) if total > 0 else 0.0 for term in vocab}
+    return [term for term, _ in sorted(weights.items(), key=lambda x: x[1], reverse=True)[:k]]
+
+
+def _run_swap_test(state_a, state_b, n_shots, seed):
+    from qiskit import transpile
+    from qiskit_aer import AerSimulator
+    from qstk.qc.circuits import swap_test_circuit
+    simulator = AerSimulator(seed_simulator=seed)
+    qc = swap_test_circuit(state_a, state_b)
+    transpiled = transpile(qc, simulator)
+    counts = simulator.run(transpiled, shots=n_shots).result().get_counts(transpiled)
+    total = sum(counts.values())
+    p0 = counts.get("0", 0) / total if total > 0 else 0.5
+    return 2.0 * p0 - 1.0
+
+
+def _classical_cosine(a, b):
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
+
+
+def nlp_semantic_search_bar():
+    """Swap-test semantic search: quantum vs classical similarity."""
+    corpus = [
+        "quantum computing uses qubits to process information",
+        "neural networks learn patterns from large datasets",
+        "superconducting qubits operate at cryogenic temperatures",
+        "natural language processing models understand text",
+        "ion traps confine atoms for quantum experiments",
+        "transformer architectures power modern nlp systems",
+    ]
+    query = "quantum information processing with qubits"
+
+    vocab = sorted(set([t for d in corpus for t in _tokenize(d)]))
+    idf = _compute_idf(corpus, vocab)
+    terms = _select_top_terms_by_query(vocab, idf, query, 8)
+    doc_vectors = [_tfidf_vector(_term_counts(d, vocab), idf, terms) for d in corpus]
+    query_vec = _tfidf_vector(_term_counts(query, vocab), idf, terms)
+    query_state = _pad_to_power_of_two(query_vec)
+    doc_states = [_pad_to_power_of_two(v) for v in doc_vectors]
+
+    docs = [d[:45] + "..." if len(d) > 45 else d for d in corpus]
+    q_sims = [_run_swap_test(query_state, s, 8192, 42 + i) for i, s in enumerate(doc_states)]
+    c_sims = [_classical_cosine(query_vec, v) ** 2 for v in doc_vectors]
+
+    x = np.arange(len(docs))
+    w = 0.35
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.bar(x - w / 2, q_sims, w, label="Quantum swap-test |<q|d>|²", color="#4CAF50", edgecolor="k", linewidth=0.5)
+    ax.bar(x + w / 2, c_sims, w, label="Classical cos²", color="#2196F3", edgecolor="k", linewidth=0.5)
+    ax.set_xticks(x)
+    ax.set_xticklabels(docs, rotation=35, ha="right", fontsize=9)
+    ax.set_ylabel("Similarity")
+    ax.set_title("Quantum Semantic Search: Swap-Test vs Classical Cosine", fontsize=13, fontweight="bold")
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis="y")
+    plt.tight_layout()
+    fig.savefig(f"{OUT}/nlp_semantic_search.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    print("  nlp_semantic_search.png")
+
+
+def nlp_text_classification_kernel():
+    """Heatmap of the quantum kernel matrix for sentiment classification."""
+    documents = [
+        ("the movie was absolutely excellent and thrilling", 1),
+        ("a wonderful performance by the amazing cast", 1),
+        ("one of the greatest films ever brilliant and excellent", 1),
+        ("amazing direction excellent story truly wonderful", 1),
+        ("terrible acting and a boring predictable plot", 0),
+        ("worst movie ever completely awful dull waste of time", 0),
+        ("awful acting boring story disappointing in every way", 0),
+        ("terrible dull and awful no redeeming qualities", 0),
+    ]
+    vocabulary = [
+        "excellent", "amazing", "brilliant", "wonderful",
+        "terrible", "awful", "boring", "dull",
+    ]
+
+    idf = _compute_idf([text for text, _ in documents], vocabulary)
+    states = [_pad_to_power_of_two(_tfidf_vector(_term_counts(text, vocabulary), idf, vocabulary))
+              for text, _ in documents]
+    labels = ["pos" if label else "neg" for _, label in documents]
+
+    n = len(documents)
+    K = np.eye(n, dtype=float)
+    for i in range(n):
+        for j in range(i + 1, n):
+            k = _run_swap_test(states[i], states[j], 4096, 42 + i * n + j)
+            K[i, j] = k
+            K[j, i] = k
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(K, cmap="RdBu_r", vmin=-0.3, vmax=1.0)
+    ax.set_xticks(np.arange(n))
+    ax.set_yticks(np.arange(n))
+    ax.set_xticklabels([f"{i}\n{l}" for i, l in enumerate(labels)], fontsize=9)
+    ax.set_yticklabels([f"{i}\n{l}" for i, l in enumerate(labels)], fontsize=9)
+    for i in range(n):
+        for j in range(n):
+            ax.text(j, i, f"{K[i, j]:.2f}", ha="center", va="center", color="black", fontsize=8)
+    plt.colorbar(im, ax=ax, label="Swap-test |<dᵢ|dⱼ>|²")
+    ax.set_title("Quantum Kernel Matrix for Sentiment Classification", fontsize=13, fontweight="bold")
+    plt.tight_layout()
+    fig.savefig(f"{OUT}/nlp_text_classification_kernel.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    print("  nlp_text_classification_kernel.png")
+
+
+def nlp_topic_clustering():
+    """Quantum k-means vs classical k-means topic assignments."""
+    documents = [
+        ("the stock market rose after strong earnings as investors bought shares", "finance"),
+        ("investors bought bonds as interest rates fell sharply in the market", "finance"),
+        ("the quarterback threw a touchdown in the final minute of the game", "sports"),
+        ("the team clinched the championship with a clean sweep of the series", "sports"),
+        ("gene editing could cure inherited diseases according to the study", "biology"),
+        ("the new study maps proteins inside a single cell with high precision", "biology"),
+    ]
+    vocabulary = [
+        "stock", "market", "investors",
+        "quarterback", "touchdown", "team", "championship",
+        "gene", "cell", "proteins",
+    ]
+    k = 3
+
+    def average_state(states):
+        if not states:
+            return None
+        avg = np.zeros_like(states[0], dtype=complex)
+        for s in states:
+            avg += s
+        return avg / np.linalg.norm(avg)
+
+    def estimate_distance(state_a, state_b, n_shots, seed):
+        k_est = _run_swap_test(state_a, state_b, n_shots, seed)
+        return max(0.0, 2.0 - 2.0 * k_est)
+
+    def quantum_kmeans(states, k, n_iterations, n_shots, seed):
+        rng = np.random.default_rng(seed)
+        centroids = [states[i].copy() for i in rng.choice(len(states), size=k, replace=False)]
+        assignments = [0] * len(states)
+        for iteration in range(n_iterations):
+            new_assignments = []
+            for i, state in enumerate(states):
+                distances = [estimate_distance(state, centroid, n_shots, seed + iteration * 100 + i * 10 + c)
+                             for c, centroid in enumerate(centroids)]
+                new_assignments.append(int(np.argmin(distances)))
+            if new_assignments == assignments and iteration > 0:
+                assignments = new_assignments
+                break
+            assignments = new_assignments
+            new_centroids = []
+            for c in range(k):
+                cluster = [states[i] for i, a in enumerate(assignments) if a == c]
+                new_centroids.append(average_state(cluster) if cluster else centroids[c])
+            centroids = new_centroids
+        return assignments
+
+    def classical_kmeans(vectors, k, n_iterations, seed):
+        rng = np.random.default_rng(seed)
+        centroids = [vectors[i].copy() for i in rng.choice(len(vectors), size=k, replace=False)]
+        assignments = [0] * len(vectors)
+        for iteration in range(n_iterations):
+            new_assignments = []
+            for vec in vectors:
+                distances = [np.linalg.norm(vec - c) for c in centroids]
+                new_assignments.append(int(np.argmin(distances)))
+            if new_assignments == assignments and iteration > 0:
+                assignments = new_assignments
+                break
+            assignments = new_assignments
+            new_centroids = []
+            for c in range(k):
+                cluster = [vectors[i] for i, a in enumerate(assignments) if a == c]
+                new_centroids.append(np.mean(cluster, axis=0) if cluster else centroids[c])
+                norm = np.linalg.norm(new_centroids[-1])
+                if norm > 0:
+                    new_centroids[-1] = new_centroids[-1] / norm
+            centroids = new_centroids
+        return assignments
+
+    idf = _compute_idf([text for text, _ in documents], vocabulary)
+    vectors = [_tfidf_vector(_term_counts(text, vocabulary), idf, vocabulary) for text, _ in documents]
+    states = [_pad_to_power_of_two(v) for v in vectors]
+    true_labels = [label for _, label in documents]
+    q_assignments = quantum_kmeans(states, k, 8, 4096, 42)
+    c_assignments = classical_kmeans(vectors, k, 8, 42)
+
+    n = len(documents)
+    pair_true = np.array([[true_labels[i] == true_labels[j] for j in range(n)] for i in range(n)])
+    pair_q = np.array([[q_assignments[i] == q_assignments[j] for j in range(n)] for i in range(n)])
+    pair_c = np.array([[c_assignments[i] == c_assignments[j] for j in range(n)] for i in range(n)])
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+    fig.suptitle("Quantum-Enhanced Topic Clustering", fontsize=14, fontweight="bold")
+
+    titles = ["True Topics", "Quantum K-Means", "Classical K-Means"]
+    matrices = [pair_true, pair_q, pair_c]
+    for ax, mat, title in zip(axes, matrices, titles):
+        im = ax.imshow(mat, cmap="binary", vmin=0, vmax=1)
+        ax.set_title(title, fontsize=12)
+        ax.set_xticks(np.arange(n))
+        ax.set_yticks(np.arange(n))
+        ax.set_xticklabels([f"{i}" for i in range(n)])
+        ax.set_yticklabels([f"{i}" for i in range(n)])
+        for i in range(n):
+            for j in range(n):
+                ax.text(j, i, "1" if mat[i, j] else "0", ha="center", va="center", color="#d32f2f" if mat[i, j] else "gray", fontsize=8)
+        plt.colorbar(im, ax=ax, shrink=0.7)
+
+    plt.tight_layout()
+    fig.savefig(f"{OUT}/nlp_topic_clustering.png", dpi=150, bbox_inches="tight")
+    plt.close()
+    print("  nlp_topic_clustering.png")
+
+
 # ═════════════════════════════════════════════════════════════════════
 # Run all
 # ═════════════════════════════════════════════════════════════════════
@@ -383,5 +643,10 @@ if __name__ == "__main__":
 
     print("\nCHSH plots:")
     chsh_classical_vs_quantum()
+
+    print("\nQuantum NLP plots:")
+    nlp_semantic_search_bar()
+    nlp_text_classification_kernel()
+    nlp_topic_clustering()
 
     print(f"\nDone! {len([f for f in __import__('os').listdir(OUT) if f.endswith('.png')])} images in {OUT}/")

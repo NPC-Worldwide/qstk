@@ -326,3 +326,100 @@ def to_cirq(circuit_ops: List[tuple], n_qubits: int = 2):
     circuit = cirq.Circuit(moments)
     circuit.append(cirq.measure(*qubits, key="result"))
     return circuit
+
+
+def _pad_state(vec: np.ndarray, dim: int) -> np.ndarray:
+    """Pad and normalize a state vector to a Hilbert space of dimension dim."""
+    out = np.zeros(dim, dtype=complex)
+    n = min(len(vec), dim)
+    out[:n] = vec[:n]
+    norm = np.linalg.norm(out)
+    if norm == 0:
+        out[0] = 1.0
+    else:
+        out = out / norm
+    return out
+
+
+def swap_test_circuit(
+    state_a: np.ndarray,
+    state_b: np.ndarray,
+    n_qubits: Optional[int] = None,
+):
+    """Build a Qiskit swap-test circuit estimating |<a|b>|^2.
+
+    Two n-qubit registers are prepared from the supplied amplitude vectors.
+    An ancilla controls a pairwise swap between the registers; measuring the
+    ancilla gives P(0) = (1 + |<a|b>|^2) / 2.
+
+    Parameters
+    ----------
+    state_a, state_b : array_like
+        Amplitude vectors.  They are padded to the next power of two and
+        normalized automatically.
+    n_qubits : int, optional
+        Size of each register.  Inferred from the vectors if omitted.
+
+    Returns
+    -------
+    qiskit.QuantumCircuit with one classical bit measuring the ancilla.
+    """
+    from qiskit import QuantumCircuit
+
+    a = np.array(state_a, dtype=complex)
+    b = np.array(state_b, dtype=complex)
+    if n_qubits is None:
+        n_qubits = int(np.ceil(np.log2(max(len(a), len(b), 1))))
+    dim = 2 ** n_qubits
+    a = _pad_state(a, dim)
+    b = _pad_state(b, dim)
+
+    ancilla = 0
+    reg_a = list(range(1, n_qubits + 1))
+    reg_b = list(range(n_qubits + 1, 2 * n_qubits + 1))
+
+    qc = QuantumCircuit(2 * n_qubits + 1, 1)
+    qc.initialize(a, reg_a)
+    qc.initialize(b, reg_b)
+    qc.h(ancilla)
+    for i in range(n_qubits):
+        qc.cswap(ancilla, reg_a[i], reg_b[i])
+    qc.h(ancilla)
+    qc.measure(ancilla, 0)
+    return qc
+
+
+def estimate_overlap(
+    state_a: np.ndarray,
+    state_b: np.ndarray,
+    n_shots: int = 8192,
+    seed: Optional[int] = None,
+    n_qubits: Optional[int] = None,
+) -> float:
+    """Estimate |<a|b>|^2 with a Qiskit Aer swap-test circuit.
+
+    Parameters
+    ----------
+    state_a, state_b : array_like
+        Amplitude-encoded vectors.
+    n_shots : int
+        Measurement shots.
+    seed : int, optional
+        Simulator seed.
+    n_qubits : int, optional
+        Size of each register.
+
+    Returns
+    -------
+    float in [0, 1] : the estimated squared overlap.
+    """
+    from qiskit import transpile
+    from qiskit_aer import AerSimulator
+
+    simulator = AerSimulator(seed_simulator=seed)
+    qc = swap_test_circuit(state_a, state_b, n_qubits)
+    transpiled = transpile(qc, simulator)
+    counts = simulator.run(transpiled, shots=n_shots).result().get_counts(transpiled)
+    total = sum(counts.values())
+    p0 = counts.get("0", 0) / total if total > 0 else 0.5
+    return 2.0 * p0 - 1.0

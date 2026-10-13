@@ -6,10 +6,11 @@
 
 ## Overview
 
-QSTKL is a small Python toolkit for quantum NLP experiments. It provides building blocks for tasks that connect language models to small-qubit quantum computing:
+QSTKL is a small Python toolkit for quantum NLP experiments. It provides building blocks for tasks that connect text processing to small-qubit quantum computing:
 
-- encode semantic ambiguity or topic correlations as quantum states
-- run those states through simulators (NumPy, Qiskit Aer) or real QPUs (IBM Quantum, Amazon Braket)
+- encode documents, queries, and topic vectors as quantum amplitude states
+- estimate semantic similarity and kernels with swap-test circuits on Qiskit Aer
+- run CHSH/Bell experiments and optionally submit circuits to IBM Quantum or Amazon Braket
 - drive LLM experiments with persona variation and parameter sweeps
 - analyze results with statistical helpers
 
@@ -103,6 +104,9 @@ Parameter sweep construction, CSV logging/aggregation, and combinatorial signifi
 
 ```bash
 pip install matplotlib qiskit qiskit-aer
+python examples/quantum_nlp_semantic_search.py   # swap-test document retrieval
+python examples/quantum_nlp_text_classification.py  # quantum kernel SVM
+python examples/quantum_nlp_topic_clustering.py     # quantum k-means
 python examples/qc_basics.py          # quantum circuit walkthrough
 python examples/chsh_experiments.py     # classical vs quantum statistics
 python examples/hardware_guide.py       # backend cost estimation
@@ -110,17 +114,27 @@ python examples/qc_interactive.py       # interactive sliders
 python docs/generate_images.py          # regenerate figures
 ```
 
-## A Word-Sense Encoding Experiment
+## Quantum NLP primitives
 
-Map ambiguous word meanings to a 2-qubit state and measure correlations:
+Run a semantic search where the similarity between a query and every document
+is estimated by a Qiskit Aer swap-test circuit:
 
-```python
-from qstk.qc import semantic_circuit
+```bash
+python examples/quantum_nlp_semantic_search.py
+```
 
-# bank (financial / river) x bat (baseball / animal)
-correlated = [0.7, 0.05, 0.05, 0.7]
-result = semantic_circuit(correlated, n_shots=4096)
-print(f"S = {result['s_value']:.3f}, violation = {result['violation']}")
+Build a sentiment classifier from a quantum kernel matrix computed with
+swap-test circuits and a classical SVM:
+
+```bash
+python examples/quantum_nlp_text_classification.py
+```
+
+Cluster documents by topic using quantum k-means, where document-centroid
+distances come from swap-test measurements:
+
+```bash
+python examples/quantum_nlp_topic_clustering.py
 ```
 
 ## License
